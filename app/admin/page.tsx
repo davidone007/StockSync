@@ -41,14 +41,15 @@ export default function AdminPage() {
       return;
     }
 
-    // Validar email
+    // Normalizar y validar email
+    const normalizedEmail = form.email.toLowerCase().trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       alert("Por favor ingresa un email válido");
       return;
     }
 
-    const emailExists = state?.users.some((u) => u.email === form.email);
+    const emailExists = state?.users.some((u) => u.email.toLowerCase().trim() === normalizedEmail);
     if (emailExists) {
       alert("Ya existe un usuario con ese email");
       return;
@@ -57,7 +58,7 @@ export default function AdminPage() {
     const newUser: UserRecord = {
       id: crypto.randomUUID(),
       name: form.name!,
-      email: form.email!.toLowerCase().trim(),
+      email: normalizedEmail,
       password: form.password!,
       role: form.role,
       phone: form.phone,
@@ -97,21 +98,21 @@ export default function AdminPage() {
                 <Button
                   type="button"
                   variant={form.role === "tendero" ? "default" : "outline"}
-                  onClick={() => setForm({ role: "tendero" })}
+                  onClick={() => setForm(prev => ({ ...prev, role: "tendero" }))}
                 >
                   Tendero
                 </Button>
                 <Button
                   type="button"
                   variant={form.role === "proveedor" ? "default" : "outline"}
-                  onClick={() => setForm({ role: "proveedor" })}
+                  onClick={() => setForm(prev => ({ ...prev, role: "proveedor" }))}
                 >
                   Proveedor
                 </Button>
                 <Button
                   type="button"
                   variant={form.role === "admin" ? "default" : "outline"}
-                  onClick={() => setForm({ role: "admin" })}
+                  onClick={() => setForm(prev => ({ ...prev, role: "admin" }))}
                 >
                   Admin
                 </Button>

@@ -123,9 +123,32 @@ export function initializeStateIfNeeded(): AppState {
       password: "admin", // prototype default
       role: "admin",
     };
+    
+    const tendero: UserRecord = {
+      id: crypto.randomUUID(),
+      name: "Samuel Tendero",
+      email: "samuel@gmail.com",
+      password: "1234",
+      role: "tendero",
+      phone: "+57 300 123 4567",
+      storeName: "Tienda Samuel"
+    };
+
+    const proveedor: UserRecord = {
+      id: crypto.randomUUID(),
+      name: "Samuel Proveedor",
+      email: "samuel.proveedor@gmail.com",
+      password: "1234",
+      role: "proveedor",
+      phone: "+57 300 765 4321",
+      businessName: "Distribuidora Samuel S.A.",
+      address: "Calle Principal #123, Cali",
+      description: "Distribuidor mayorista de productos de consumo masivo"
+    };
+
     const state: AppState = {
       ...existing,
-      users: [admin],
+      users: [admin, tendero, proveedor],
       currentUserId: null,
       chats: [],
     };

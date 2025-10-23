@@ -534,8 +534,13 @@ export default function StockSyncApp() {
     return cleanup;
   }, [activeTab, isScanning]);
 
-  // Solo una vez al montar
+  // Solo una vez al montar - Cargar estado inicial
   useEffect(() => {
+    // Cargar el estado de la app primero (necesario para login)
+    const st = getState();
+    setAppState(st);
+    
+    // Luego intentar recuperar usuario guardado
     const savedUser = localStorage.getItem("loggedInUser");
     if (savedUser) {
       try {
@@ -769,8 +774,11 @@ export default function StockSyncApp() {
       return;
     }
 
+    // Normalizar email antes de comparar
+    const normalizedEmail = email.toLowerCase().trim();
+    
     const user = appState?.users.find(
-      (u) => u.email === email && u.password === password
+      (u) => u.email.toLowerCase().trim() === normalizedEmail && u.password === password
     );
 
     if (user) {
@@ -802,9 +810,10 @@ export default function StockSyncApp() {
       return;
     }
 
-    // Validar formato de email
+    // Normalizar y validar formato de email
+    const normalizedEmail = registerForm.email.toLowerCase().trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(registerForm.email)) {
+    if (!emailRegex.test(normalizedEmail)) {
       toast.error("Por favor ingrese un correo electrónico válido");
       return;
     }
@@ -825,7 +834,7 @@ export default function StockSyncApp() {
     }
 
     const st = getState();
-    const exists = st.users.some((u) => u.email === registerForm.email);
+    const exists = st.users.some((u) => u.email.toLowerCase().trim() === normalizedEmail);
     if (exists) {
       toast.error("Ya existe un usuario con ese correo electrónico");
       return;
@@ -834,7 +843,7 @@ export default function StockSyncApp() {
     const newUser: UserRecord = {
       id: crypto.randomUUID(),
       name: registerForm.name.trim(),
-      email: registerForm.email.trim().toLowerCase(),
+      email: normalizedEmail,
       password: registerForm.password,
       role: (registerForm.userType as any) || "tendero",
       storeName: registerForm.storeName?.trim(),
