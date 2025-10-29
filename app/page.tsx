@@ -125,12 +125,14 @@ export default function StockSyncApp() {
   const [addingSupplierProduct, setAddingSupplierProduct] = useState(false);
   const [newSupplierProduct, setNewSupplierProduct] = useState({
     name: "",
+    barcode: "",
     price: 0,
     stock: 0,
     minStock: 0,
     description: "",
     discount: 0,
     category: "",
+    image: "",
   });
 
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -140,6 +142,7 @@ export default function StockSyncApp() {
     minStock: 0,
     discount: 0,
     category: "",
+    image: "",
   });
 
   const [products, setProducts] = useState<any[]>([]);
@@ -171,10 +174,12 @@ export default function StockSyncApp() {
     name: "",
     barcode: "",
     category: "",
-    stock: "",
-    minStock: "",
-    price: "",
+    stock: 0,
+    minStock: 0,
+    price: 0,
     image: "",
+    description: "",
+    discount: 0,
   });
   const [productImage, setProductImage] = useState<File | null>(null);
 
@@ -192,6 +197,11 @@ export default function StockSyncApp() {
   );
   const [chatMessage, setChatMessage] = useState("");
   const [conversations, setConversations] = useState<any[]>([]);
+
+  // States for adding products from offers
+  const [selectedOfferProduct, setSelectedOfferProduct] = useState<any>(null);
+  const [offerProductQuantity, setOfferProductQuantity] = useState(1);
+  const [addingFromOfferModal, setAddingFromOfferModal] = useState(false);
 
   const generateUniqueCode = () => {
     const timestamp = Date.now().toString(36).toUpperCase();
@@ -403,8 +413,7 @@ export default function StockSyncApp() {
       try {
         codeReader.decodeFromVideoElement(
           videoRef.current!,
-          scannerListener,
-          errorListener
+          scannerListener
         );
       } catch (e) {
         console.error("Error en decodificación:", e);
@@ -573,6 +582,34 @@ export default function StockSyncApp() {
         address: loggedInUser.address || "",
         description: loggedInUser.description || "",
       });
+
+      // Load supplier's own offers from global state
+      const supplierOffers = st.supplierOffers?.filter(
+        (offer) => offer.supplierId === loggedInUser.id && offer.isActive
+      ) || [];
+      
+      // Convert to local announcement format for UI compatibility
+      const localAnnouncements = supplierOffers.map((offer) => ({
+        id: offer.id,
+        products: offer.products,
+        createdAt: offer.createdAt,
+      }));
+      
+      setSupplierAnnouncements(localAnnouncements);
+    } else if (loggedInUser.role === "tendero") {
+      // Load all active offers for tenderos to see
+      const allActiveOffers = st.supplierOffers?.filter(offer => offer.isActive) || [];
+      setSupplierAnnouncements(allActiveOffers.map((offer) => ({
+        id: offer.id,
+        products: offer.products,
+        createdAt: offer.createdAt,
+        supplier: {
+          name: offer.supplierName,
+          businessName: offer.supplierBusinessName,
+          phone: offer.supplierPhone,
+          email: offer.supplierEmail,
+        },
+      })));
     }
 
     // Cargar dataset: merge de localStorage + /data/barcodes.json
@@ -736,10 +773,12 @@ export default function StockSyncApp() {
       name: "",
       barcode: barcode,
       category: "",
-      stock: "1",
-      minStock: "5",
-      price: "",
+      stock: 1,
+      minStock: 5,
+      price: 0,
       image: "",
+      description: "",
+      discount: 0,
     });
     setProductImage(null);
     setCapturedPhoto(null);
@@ -907,6 +946,7 @@ export default function StockSyncApp() {
       minStock: product.minStock,
       discount: product.discount || 0,
       category: product.category || "",
+      image: product.image || "",
     });
   };
 
@@ -939,10 +979,12 @@ export default function StockSyncApp() {
       name: "",
       barcode: "",
       category: "",
-      price: "",
-      stock: "",
-      minStock: "",
+      price: 0,
+      stock: 0,
+      minStock: 0,
       image: "",
+      description: "",
+      discount: 0,
     });
     setAddingProduct(false);
   };
@@ -972,10 +1014,10 @@ export default function StockSyncApp() {
     const productToAdd = {
       ...newSupplierProduct,
       id: newId,
-      barcode: `SUP-${Date.now()}`,
-      image: "/diverse-products-still-life.png",
-      stock: 0,
-      minStock: 0,
+      barcode: newSupplierProduct.barcode || `SUP-${Date.now()}`,
+      image: newSupplierProduct.image || "/diverse-products-still-life.png",
+      stock: newSupplierProduct.stock || 0,
+      minStock: newSupplierProduct.minStock || 0,
       ownerUserId: appState?.currentUserId,
       catalogType: "proveedor" as const,
     };
@@ -989,12 +1031,14 @@ export default function StockSyncApp() {
 
     setNewSupplierProduct({
       name: "",
+      barcode: "",
       price: 0,
       stock: 0,
       minStock: 0,
       description: "",
       discount: 0,
       category: "",
+      image: "",
     });
 
     setAddingSupplierProduct(false);
@@ -1064,11 +1108,8 @@ export default function StockSyncApp() {
       return;
     }
 
-    const stock = Number.parseInt(newProduct.stock);
-    const minStock = Number.parseInt(newProduct.minStock);
-
-    if (isNaN(stock) || isNaN(minStock) || stock < 0 || minStock < 0) {
-      toast.error("Las cantidades deben ser números válidos y no negativos");
+    if (newProduct.stock < 0 || newProduct.minStock < 0) {
+      toast.error("Las cantidades no pueden ser negativas");
       return;
     }
 
@@ -1077,10 +1118,14 @@ export default function StockSyncApp() {
       name: newProduct.name,
       barcode: newProduct.barcode,
       category: newProduct.category,
-      stock: stock,
-      minStock: minStock,
-      price: newProduct.price ? Number.parseFloat(newProduct.price) : 0,
+      stock: newProduct.stock,
+      minStock: newProduct.minStock,
+      price: newProduct.price || 0,
       image: newProduct.image || "/placeholder.svg",
+      description: newProduct.description || "",
+      discount: newProduct.discount || 0,
+      ownerUserId: loggedInUser?.id,
+      catalogType: "tendero" as const,
     };
 
     setProducts((prev) => {
@@ -1094,10 +1139,12 @@ export default function StockSyncApp() {
       name: "",
       barcode: "",
       category: "",
-      stock: "",
-      minStock: "",
-      price: "",
+      stock: 0,
+      minStock: 0,
+      price: 0,
       image: "",
+      description: "",
+      discount: 0,
     });
     setProductImage(null);
     setAddingProduct(false);
@@ -1110,35 +1157,67 @@ export default function StockSyncApp() {
       return;
     }
 
+    if (!loggedInUser || loggedInUser.role !== "proveedor") {
+      toast.error("Solo los proveedores pueden crear ofertas");
+      return;
+    }
+
     const productsToPublish = supplierProducts.filter((p) =>
       selectedProductsForAnnouncement.includes(p.id)
     );
 
+    // Create a global supplier offer
+    const newOffer = {
+      id: crypto.randomUUID(),
+      supplierId: loggedInUser.id,
+      supplierName: loggedInUser.name,
+      supplierBusinessName: loggedInUser.businessName,
+      supplierPhone: loggedInUser.phone,
+      supplierEmail: loggedInUser.email,
+      products: productsToPublish,
+      createdAt: new Date().toISOString(),
+      isActive: true,
+    };
+
+    // Save to global state
+    const updatedState = updateState((s) => ({
+      ...s,
+      supplierOffers: [...s.supplierOffers, newOffer],
+    }));
+    setAppState(updatedState);
+
+    // Also keep local announcement for UI compatibility
     const newAnnouncement = {
-      id: Date.now(),
+      id: newOffer.id, // Use the same ID as the global offer
       products: productsToPublish,
       createdAt: new Date().toISOString(),
     };
 
-    setSupplierAnnouncements((prev) => {
-      const next = [...prev, newAnnouncement];
-      const saved = updateState((s) => ({ ...s, announcements: next }));
-      setAppState(saved);
-      return next;
-    });
+    setSupplierAnnouncements((prev) => [...prev, newAnnouncement]);
     setSelectedProductsForAnnouncement([]);
     setAddingAnnouncement(false);
-    toast.success("Anuncio publicado correctamente");
+    toast.success("Oferta publicada correctamente y visible para todos los tenderos");
   };
 
-  const deleteAnnouncement = (announcementId: number) => {
-    setSupplierAnnouncements((prev) => {
-      const next = prev.filter((a) => a.id !== announcementId);
-      const saved = updateState((s) => ({ ...s, announcements: next }));
-      setAppState(saved);
-      return next;
-    });
-    toast.success("Anuncio eliminado correctamente");
+  const deleteAnnouncement = (announcementId: string | number) => {
+    if (!loggedInUser || loggedInUser.role !== "proveedor") {
+      toast.error("Solo los proveedores pueden eliminar sus ofertas");
+      return;
+    }
+
+    // Remove from global offers
+    const updatedState = updateState((s) => ({
+      ...s,
+      supplierOffers: s.supplierOffers.filter(
+        (offer) => offer.id !== announcementId.toString() || offer.supplierId !== loggedInUser.id
+      ),
+    }));
+    setAppState(updatedState);
+
+    // Remove from local announcements
+    setSupplierAnnouncements((prev) => prev.filter((a) => a.id !== announcementId));
+    
+    toast.success("Oferta eliminada correctamente");
   };
 
   const getPublishedProducts = () => {
@@ -1177,6 +1256,7 @@ export default function StockSyncApp() {
       minStock: product.minStock,
       discount: product.discount || 0,
       category: product.category || "",
+      image: product.image || "",
     });
   };
 
@@ -1270,6 +1350,83 @@ export default function StockSyncApp() {
       });
     });
     return count;
+  };
+
+  // Function to add products from supplier offers to shopkeeper inventory
+  const addProductFromOffer = (offerProduct: any, quantity: number = 1) => {
+    if (!loggedInUser || loggedInUser.role !== "tendero") {
+      toast.error("Solo los tenderos pueden agregar productos a su inventario");
+      return;
+    }
+
+    if (quantity <= 0) {
+      toast.error("La cantidad debe ser mayor a 0");
+      return;
+    }
+
+    // Check if product already exists in shopkeeper's inventory (by barcode)
+    const existingProductIndex = products.findIndex(
+      (p) => p.barcode === offerProduct.barcode
+    );
+
+    if (existingProductIndex !== -1) {
+      // Product exists, increase quantity
+      const updatedProducts = [...products];
+      updatedProducts[existingProductIndex] = {
+        ...updatedProducts[existingProductIndex],
+        stock: updatedProducts[existingProductIndex].stock + quantity,
+      };
+
+      setProducts(updatedProducts);
+      const saved = updateState((s) => ({ ...s, products: updatedProducts }));
+      setAppState(saved);
+
+      toast.success(
+        `✅ Se agregaron ${quantity} unidades de ${offerProduct.name} al inventario existente`
+      );
+    } else {
+      // Product doesn't exist, create new
+      const newProduct = {
+        id: Date.now(),
+        name: offerProduct.name,
+        barcode: offerProduct.barcode,
+        category: offerProduct.category || "Sin categoría",
+        stock: quantity,
+        minStock: offerProduct.minStock || 5,
+        price: offerProduct.price,
+        image: offerProduct.image || "/placeholder.svg",
+        description: offerProduct.description || "",
+        discount: offerProduct.discount || 0,
+        ownerUserId: loggedInUser.id,
+        catalogType: "tendero" as const,
+      };
+
+      const updatedProducts = [...products, newProduct];
+      setProducts(updatedProducts);
+      const saved = updateState((s) => ({ ...s, products: updatedProducts }));
+      setAppState(saved);
+
+      toast.success(
+        `✅ ${offerProduct.name} agregado al inventario con ${quantity} unidades`
+      );
+    }
+  };
+
+  // Function to handle selecting a product from an offer
+  const handleSelectOfferProduct = (product: any) => {
+    setSelectedOfferProduct(product);
+    setOfferProductQuantity(1);
+    setAddingFromOfferModal(true);
+  };
+
+  // Function to confirm adding a product from an offer
+  const confirmAddFromOffer = () => {
+    if (selectedOfferProduct && offerProductQuantity > 0) {
+      addProductFromOffer(selectedOfferProduct, offerProductQuantity);
+      setAddingFromOfferModal(false);
+      setSelectedOfferProduct(null);
+      setOfferProductQuantity(1);
+    }
   };
 
   const markMessagesAsRead = (conversationId: string) => {
@@ -1998,6 +2155,20 @@ export default function StockSyncApp() {
                   />
                 </div>
                 <div>
+                  <Label htmlFor="newProductBarcode">Código de Barras</Label>
+                  <Input
+                    id="newProductBarcode"
+                    placeholder="Ej: 123456789012"
+                    value={newSupplierProduct.barcode}
+                    onChange={(e) =>
+                      setNewSupplierProduct((prev) => ({
+                        ...prev,
+                        barcode: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
                   <Label htmlFor="newProductPrice">Precio *</Label>
                   <Input
                     id="newProductPrice"
@@ -2047,6 +2218,38 @@ export default function StockSyncApp() {
                       setNewSupplierProduct((prev) => ({
                         ...prev,
                         description: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newProductStock">Stock Disponible</Label>
+                  <Input
+                    id="newProductStock"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={newSupplierProduct.stock || ""}
+                    onChange={(e) =>
+                      setNewSupplierProduct((prev) => ({
+                        ...prev,
+                        stock: Number.parseInt(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newProductMinStock">Stock Mínimo</Label>
+                  <Input
+                    id="newProductMinStock"
+                    type="number"
+                    min="0"
+                    placeholder="5"
+                    value={newSupplierProduct.minStock || ""}
+                    onChange={(e) =>
+                      setNewSupplierProduct((prev) => ({
+                        ...prev,
+                        minStock: Number.parseInt(e.target.value) || 0,
                       }))
                     }
                   />
@@ -3454,12 +3657,27 @@ export default function StockSyncApp() {
                     <Card key={announcement.id} className="overflow-hidden">
                       <CardHeader className="bg-muted/50">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-base">
-                            Oferta - {announcement.products.length}{" "}
-                            {announcement.products.length === 1
-                              ? "producto"
-                              : "productos"}
-                          </CardTitle>
+                          <div>
+                            <CardTitle className="text-base">
+                              Oferta - {announcement.products.length}{" "}
+                              {announcement.products.length === 1
+                                ? "producto"
+                                : "productos"}
+                            </CardTitle>
+                            {announcement.supplier && (
+                              <div className="flex items-center gap-2 mt-1">
+                                <Store className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm font-medium text-muted-foreground">
+                                  {announcement.supplier.businessName || announcement.supplier.name}
+                                </span>
+                                {announcement.supplier.phone && (
+                                  <span className="text-xs text-muted-foreground">
+                                    • {announcement.supplier.phone}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           <Badge variant="secondary">
                             {new Date(
                               announcement.createdAt
@@ -3468,7 +3686,7 @@ export default function StockSyncApp() {
                         </div>
                       </CardHeader>
                       <CardContent className="p-4">
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-3 mb-4">
                           {announcement.products.map((product: any) => (
                             <div
                               key={product.id}
@@ -3491,7 +3709,7 @@ export default function StockSyncApp() {
                                 </Badge>
                               )}
                               {product.discount > 0 ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 mb-2">
                                   <span className="text-xs text-muted-foreground line-through">
                                     ${product.price}
                                   </span>
@@ -3510,13 +3728,43 @@ export default function StockSyncApp() {
                                   </Badge>
                                 </div>
                               ) : (
-                                <p className="text-sm font-bold text-primary">
+                                <p className="text-sm font-bold text-primary mb-2">
                                   ${product.price}
                                 </p>
                               )}
+                              <Button
+                                size="sm"
+                                className="w-full text-xs"
+                                onClick={() => handleSelectOfferProduct(product)}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Agregar a inventario
+                              </Button>
                             </div>
                           ))}
                         </div>
+                        {announcement.supplier && (
+                          <div className="flex items-center justify-between pt-3 border-t">
+                            <div className="text-xs text-muted-foreground">
+                              <p>Contacto: {announcement.supplier.email}</p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                // Find supplier in users and start chat
+                                const supplier = appState?.users.find(u => u.email === announcement.supplier.email);
+                                if (supplier) {
+                                  setSelectedChatUser(supplier);
+                                  setChatOpen(true);
+                                }
+                              }}
+                            >
+                              <MessageCircle className="h-4 w-4 mr-2" />
+                              Contactar
+                            </Button>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}
@@ -3621,7 +3869,7 @@ export default function StockSyncApp() {
                     min="0"
                     value={newProduct.stock}
                     onChange={(e) =>
-                      setNewProduct({ ...newProduct, stock: e.target.value })
+                      setNewProduct({ ...newProduct, stock: Number.parseInt(e.target.value) || 0 })
                     }
                     placeholder="0"
                   />
@@ -3634,7 +3882,7 @@ export default function StockSyncApp() {
                     min="0"
                     value={newProduct.minStock}
                     onChange={(e) =>
-                      setNewProduct({ ...newProduct, minStock: e.target.value })
+                      setNewProduct({ ...newProduct, minStock: Number.parseInt(e.target.value) || 0 })
                     }
                     placeholder="5"
                   />
@@ -3649,7 +3897,7 @@ export default function StockSyncApp() {
                   min="0"
                   value={newProduct.price}
                   onChange={(e) =>
-                    setNewProduct({ ...newProduct, price: e.target.value })
+                    setNewProduct({ ...newProduct, price: Number.parseFloat(e.target.value) || 0 })
                   }
                   placeholder="0.00"
                 />
@@ -3722,10 +3970,12 @@ export default function StockSyncApp() {
                       name: "",
                       barcode: "",
                       category: "",
-                      stock: "",
-                      minStock: "",
-                      price: "",
+                      stock: 0,
+                      minStock: 0,
+                      price: 0,
                       image: "",
+                      description: "",
+                      discount: 0,
                     });
                     setProductImage(null);
                   }}
@@ -3918,6 +4168,59 @@ export default function StockSyncApp() {
                   <Trash2 className="h-4 w-4 mr-2" />
                   Eliminar Producto
                 </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal for adding product from offer */}
+        <Dialog open={addingFromOfferModal} onOpenChange={setAddingFromOfferModal}>
+          <DialogContent className="max-w-sm mx-auto">
+            <DialogHeader>
+              <DialogTitle>Agregar producto al inventario</DialogTitle>
+            </DialogHeader>
+            {selectedOfferProduct && (
+              <div className="space-y-4">
+                <div className="text-center">
+                  <img
+                    src={selectedOfferProduct.image || "/placeholder.svg"}
+                    alt={selectedOfferProduct.name}
+                    className="w-24 h-24 rounded object-cover mx-auto mb-2"
+                  />
+                  <h3 className="font-medium">{selectedOfferProduct.name}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    ${selectedOfferProduct.price}
+                  </p>
+                </div>
+                
+                <div>
+                  <Label htmlFor="quantity">Cantidad a agregar</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={offerProductQuantity}
+                    onChange={(e) => setOfferProductQuantity(Number(e.target.value))}
+                    className="mt-1"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setAddingFromOfferModal(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={confirmAddFromOffer}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>

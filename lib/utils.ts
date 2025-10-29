@@ -79,6 +79,19 @@ export interface AnnouncementRecord {
   createdAt: string;
 }
 
+export interface SupplierOffer {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  supplierBusinessName?: string;
+  supplierPhone?: string;
+  supplierEmail: string;
+  products: ProductRecord[];
+  createdAt: string;
+  expiresAt?: string;
+  isActive: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -102,6 +115,7 @@ export interface AppState {
   products: ProductRecord[];
   supplierProducts: ProductRecord[];
   announcements: AnnouncementRecord[];
+  supplierOffers: SupplierOffer[];
   chats: ChatConversation[];
 }
 
@@ -112,6 +126,7 @@ export function initializeStateIfNeeded(): AppState {
     products: [],
     supplierProducts: [],
     announcements: [],
+    supplierOffers: [],
     chats: [],
   });
 
@@ -150,15 +165,22 @@ export function initializeStateIfNeeded(): AppState {
       ...existing,
       users: [admin, tendero, proveedor],
       currentUserId: null,
+      supplierOffers: [],
       chats: [],
     };
     saveToStorage("state", state);
     return state;
   }
 
-  // Asegurar que chats existe (para estados antiguos)
+  // Asegurar que chats y supplierOffers existen (para estados antiguos)
   if (!existing.chats) {
     existing.chats = [];
+  }
+  if (!existing.supplierOffers) {
+    existing.supplierOffers = [];
+  }
+  
+  if (existing.chats !== existing.chats || existing.supplierOffers !== existing.supplierOffers) {
     saveToStorage("state", existing);
   }
 
