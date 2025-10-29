@@ -8,6 +8,9 @@ import {
   updateState,
   type AppState,
   type UserRecord,
+  type Sale,
+  type SaleItem,
+  type Purchase,
   loadBarcodeDataset,
 } from "@/lib/utils";
 import { toast } from "sonner";
@@ -203,6 +206,17 @@ export default function StockSyncApp() {
   const [offerProductQuantity, setOfferProductQuantity] = useState(1);
   const [addingFromOfferModal, setAddingFromOfferModal] = useState(false);
 
+  // States for billing system
+  const [salesCart, setSalesCart] = useState<SaleItem[]>([]);
+  const [customerName, setCustomerName] = useState("");
+  const [saleNotes, setSaleNotes] = useState("");
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [historyFilter, setHistoryFilter] = useState("all"); // all, today, week, month
+  const [showSaleReceipt, setShowSaleReceipt] = useState(false);
+  const [currentSaleReceipt, setCurrentSaleReceipt] = useState<Sale | null>(null);
+  const [stockUpdateTrigger, setStockUpdateTrigger] = useState(0);
+
   const generateUniqueCode = () => {
     const timestamp = Date.now().toString(36).toUpperCase();
     const random = Math.random().toString(36).substring(2, 5).toUpperCase();
@@ -259,13 +273,12 @@ export default function StockSyncApp() {
           ? { ...product, stock: Math.max(0, product.stock + change) }
           : product
       );
-      const saved = updateState((s) => ({ ...s, products: next }));
-      setAppState(saved);
-      return next;
-    });
-  };
-
-  const startScanning = async () => {
+    const saved = updateState((s) => ({ ...s, products: next }));
+    setAppState(saved);
+    setStockUpdateTrigger(prev => prev + 1); // Trigger update
+    return next;
+  });
+};  const startScanning = async () => {
     try {
       console.log("🎬 Iniciando scanner...");
 
@@ -561,7 +574,7 @@ export default function StockSyncApp() {
     }
   }, []);
 
-  // Cargar datos cuando el usuario cambia
+  // Cargar datos cuando el usuario cambia o el stock se actualiza
   useEffect(() => {
     if (!loggedInUser) return;
 
@@ -571,6 +584,8 @@ export default function StockSyncApp() {
     setProducts(st.products);
     setSupplierProducts(st.supplierProducts);
     setConversations(st.chats || []);
+    setSales(st.sales || []);
+    setPurchases(st.purchases || []);
 
     // Si hay usuario logueado, cargar su información
     if (loggedInUser.role === "proveedor") {
@@ -625,7 +640,7 @@ export default function StockSyncApp() {
         setBarcodeDb(map);
       })
       .catch(() => setBarcodeDb(localDb as BarcodeDb));
-  }, [loggedInUser?.id]); // Solo cuando cambia el usuario
+  }, [loggedInUser?.id, stockUpdateTrigger]); // Solo cuando cambia el usuario o se fuerza la actualización
 
   // Limpiar stream cuando se desmonta
   useEffect(() => {
@@ -1364,6 +1379,11 @@ export default function StockSyncApp() {
       return;
     }
 
+    // Find the offer this product belongs to
+    const relatedOffer = appState?.supplierOffers.find(offer => 
+      offer.products.some(p => p.id === offerProduct.id)
+    );
+
     // Check if product already exists in shopkeeper's inventory (by barcode)
     const existingProductIndex = products.findIndex(
       (p) => p.barcode === offerProduct.barcode
@@ -1380,6 +1400,9 @@ export default function StockSyncApp() {
       setProducts(updatedProducts);
       const saved = updateState((s) => ({ ...s, products: updatedProducts }));
       setAppState(saved);
+
+      // Force re-render
+      setStockUpdateTrigger(prev => prev + 1);
 
       toast.success(
         `✅ Se agregaron ${quantity} unidades de ${offerProduct.name} al inventario existente`
@@ -1406,8 +1429,31 @@ export default function StockSyncApp() {
       const saved = updateState((s) => ({ ...s, products: updatedProducts }));
       setAppState(saved);
 
+      // Force re-render
+      setStockUpdateTrigger(prev => prev + 1);
+
       toast.success(
         `✅ ${offerProduct.name} agregado al inventario con ${quantity} unidades`
+      );
+    }
+
+    // Register the purchase if we found the related offer
+    if (relatedOffer) {
+      const purchaseItem: SaleItem = {
+        productId: offerProduct.id,
+        productName: offerProduct.name,
+        quantity,
+        unitPrice: offerProduct.price,
+        discount: offerProduct.discount || 0,
+        subtotal: quantity * offerProduct.price * (1 - (offerProduct.discount || 0) / 100)
+      };
+
+      registerPurchaseFromOffer(
+        relatedOffer.id,
+        relatedOffer.supplierName,
+        relatedOffer.supplierId,
+        [purchaseItem],
+        purchaseItem.subtotal
       );
     }
   };
@@ -1427,6 +1473,223 @@ export default function StockSyncApp() {
       setSelectedOfferProduct(null);
       setOfferProductQuantity(1);
     }
+  };
+
+  // Billing System Functions
+  const addToSalesCart = (product: any, quantity: number = 1) => {
+    if (quantity <= 0) {
+      toast.error("La cantidad debe ser mayor a 0");
+      return;
+    }
+
+    if (quantity > product.stock) {
+      toast.error(`Solo hay ${product.stock} unidades disponibles`);
+      return;
+    }
+
+    const existingItem = salesCart.find(item => item.productId === product.id);
+    
+    if (existingItem) {
+      const newQuantity = existingItem.quantity + quantity;
+      if (newQuantity > product.stock) {
+        toast.error(`Solo hay ${product.stock} unidades disponibles`);
+        return;
+      }
+      
+      setSalesCart(prev => prev.map(item => 
+        item.productId === product.id 
+          ? {
+              ...item,
+              quantity: newQuantity,
+              subtotal: newQuantity * item.unitPrice * (1 - item.discount / 100)
+            }
+          : item
+      ));
+    } else {
+      const discount = product.discount || 0;
+      const unitPrice = product.price;
+      const subtotal = quantity * unitPrice * (1 - discount / 100);
+      
+      const newItem: SaleItem = {
+        productId: product.id,
+        productName: product.name,
+        quantity,
+        unitPrice,
+        discount,
+        subtotal
+      };
+      
+      setSalesCart(prev => [...prev, newItem]);
+    }
+    
+    toast.success(`${product.name} agregado al carrito`);
+  };
+
+  const removeFromSalesCart = (productId: number) => {
+    setSalesCart(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  const updateCartItemQuantity = (productId: number, newQuantity: number) => {
+    console.log(`Updating cart item ${productId} to quantity ${newQuantity}`);
+    
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    if (newQuantity <= 0) {
+      removeFromSalesCart(productId);
+      return;
+    }
+
+    if (newQuantity > product.stock) {
+      toast.error(`Solo hay ${product.stock} unidades disponibles`);
+      return;
+    }
+
+    setSalesCart(prev => {
+      const updated = prev.map(item => 
+        item.productId === productId 
+          ? {
+              ...item,
+              quantity: newQuantity,
+              subtotal: newQuantity * item.unitPrice * (1 - item.discount / 100)
+            }
+          : item
+      );
+      console.log('Updated cart:', updated);
+      return updated;
+    });
+  };
+
+  const calculateSaleTotal = () => {
+    const subtotal = salesCart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+    const totalDiscount = salesCart.reduce((sum, item) => sum + (item.quantity * item.unitPrice * item.discount / 100), 0);
+    const total = subtotal - totalDiscount;
+    
+    return { subtotal, totalDiscount, total };
+  };
+
+  const completeSale = () => {
+    if (salesCart.length === 0) {
+      toast.error("El carrito está vacío");
+      return;
+    }
+
+    if (!loggedInUser || loggedInUser.role !== "tendero") {
+      toast.error("Solo los tenderos pueden realizar ventas");
+      return;
+    }
+
+    // Validate stock availability
+    for (const item of salesCart) {
+      const product = products.find(p => p.id === item.productId);
+      if (!product || product.stock < item.quantity) {
+        toast.error(`Stock insuficiente para ${item.productName}`);
+        return;
+      }
+    }
+
+    const { subtotal, totalDiscount, total } = calculateSaleTotal();
+
+    const newSale: Sale = {
+      id: crypto.randomUUID(),
+      tenderoId: loggedInUser.id,
+      items: [...salesCart],
+      subtotal,
+      totalDiscount,
+      total,
+      createdAt: new Date().toISOString(),
+      customerName: customerName || undefined,
+      notes: saleNotes || undefined,
+    };
+
+    // Update product stock
+    const updatedProducts = products.map(product => {
+      const cartItem = salesCart.find(item => item.productId === product.id);
+      if (cartItem) {
+        return {
+          ...product,
+          stock: product.stock - cartItem.quantity
+        };
+      }
+      return product;
+    });
+
+    // Update state
+    const updatedSales = [...sales, newSale];
+    setSales(updatedSales);
+    setProducts(updatedProducts);
+
+    const savedState = updateState((s) => ({
+      ...s,
+      products: updatedProducts,
+      sales: updatedSales,
+    }));
+    setAppState(savedState);
+
+    // Force component re-render by updating products state again
+    setStockUpdateTrigger(prev => prev + 1);
+
+    // Show receipt
+    setCurrentSaleReceipt(newSale);
+    setShowSaleReceipt(true);
+
+    // Clear cart
+    setSalesCart([]);
+    setCustomerName("");
+    setSaleNotes("");
+
+    toast.success(`✅ Venta completada por $${total.toFixed(2)}`);
+  };
+
+  const registerPurchaseFromOffer = (offerId: string, supplierName: string, supplierId: string, items: SaleItem[], total: number) => {
+    if (!loggedInUser || loggedInUser.role !== "tendero") {
+      toast.error("Solo los tenderos pueden registrar compras");
+      return;
+    }
+
+    const newPurchase: Purchase = {
+      id: crypto.randomUUID(),
+      tenderoId: loggedInUser.id,
+      supplierId,
+      supplierName,
+      offerId,
+      items,
+      total,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedPurchases = [...purchases, newPurchase];
+    setPurchases(updatedPurchases);
+
+    const savedState = updateState((s) => ({
+      ...s,
+      purchases: updatedPurchases,
+    }));
+    setAppState(savedState);
+
+    toast.success(`✅ Compra registrada por $${total.toFixed(2)}`);
+  };
+
+  const getFilteredSales = () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    return sales.filter(sale => {
+      const saleDate = new Date(sale.createdAt);
+      
+      switch (historyFilter) {
+        case "today":
+          return saleDate >= today;
+        case "week":
+          return saleDate >= weekAgo;
+        case "month":
+          return saleDate >= monthAgo;
+        default:
+          return true;
+      }
+    });
   };
 
   const markMessagesAsRead = (conversationId: string) => {
@@ -2855,6 +3118,13 @@ export default function StockSyncApp() {
                 <Megaphone className="h-4 w-4" />
                 Ofertas
               </TabsTrigger>
+              <TabsTrigger
+                value="billing"
+                className="flex items-center gap-2"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Facturación
+              </TabsTrigger>
             </TabsList>
 
             {/* Scanning Tab */}
@@ -3311,7 +3581,7 @@ export default function StockSyncApp() {
                             <p className="text-xs text-muted-foreground mb-1">
                               {product.barcode}
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2" key={`stock-${product.id}-${product.stock}`}>
                               <div
                                 className={`w-2 h-2 rounded-full ${status.color}`}
                               ></div>
@@ -3771,6 +4041,218 @@ export default function StockSyncApp() {
                 </div>
               )}
             </TabsContent>
+
+            {/* Billing Tab */}
+            <TabsContent value="billing" className="p-4 space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Sales Cart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Nueva Venta
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Customer Info */}
+                    <div className="space-y-2">
+                      <Label htmlFor="customerName">Cliente (opcional)</Label>
+                      <Input
+                        id="customerName"
+                        placeholder="Nombre del cliente"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Product Selection */}
+                    <div className="space-y-2">
+                      <Label>Seleccionar Productos</Label>
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {products.filter(p => p.stock > 0).map((product) => (
+                          <div key={product.id} className="flex items-center justify-between p-2 border rounded">
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{product.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Stock: {product.stock} | ${product.price}
+                                {product.discount && product.discount > 0 && (
+                                  <span className="text-green-600 ml-1">
+                                    ({product.discount}% desc.)
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => addToSalesCart(product, 1)}
+                              disabled={product.stock === 0}
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Shopping Cart */}
+                    {salesCart.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Carrito de Venta</Label>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {salesCart.map((item) => (
+                            <div key={`${item.productId}-${item.quantity}`} className="flex items-center justify-between p-2 bg-muted rounded">
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{item.productName}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  ${item.unitPrice} x {item.quantity} = ${item.subtotal.toFixed(2)}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateCartItemQuantity(item.productId, item.quantity - 1)}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const newQty = parseInt(e.target.value) || 1;
+                                    updateCartItemQuantity(item.productId, newQty);
+                                  }}
+                                  className="w-16 h-8 text-center text-sm mx-1"
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateCartItemQuantity(item.productId, item.quantity + 1)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => removeFromSalesCart(item.productId)}
+                                >
+                                  ×
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Sale Total */}
+                        <div className="border-t pt-2 space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span>Subtotal:</span>
+                            <span>${calculateSaleTotal().subtotal.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>Descuentos:</span>
+                            <span>-${calculateSaleTotal().totalDiscount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold">
+                            <span>Total:</span>
+                            <span>${calculateSaleTotal().total.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {/* Notes */}
+                        <div className="space-y-2">
+                          <Label htmlFor="saleNotes">Notas (opcional)</Label>
+                          <Textarea
+                            id="saleNotes"
+                            placeholder="Notas sobre la venta..."
+                            value={saleNotes}
+                            onChange={(e) => setSaleNotes(e.target.value)}
+                          />
+                        </div>
+
+                        {/* Complete Sale Button */}
+                        <Button
+                          className="w-full"
+                          onClick={completeSale}
+                          disabled={salesCart.length === 0}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Completar Venta
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Sales History */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Historial de Ventas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Filter */}
+                    <Select value={historyFilter} onValueChange={setHistoryFilter}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las ventas</SelectItem>
+                        <SelectItem value="today">Hoy</SelectItem>
+                        <SelectItem value="week">Esta semana</SelectItem>
+                        <SelectItem value="month">Este mes</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {/* Sales List */}
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {getFilteredSales().length === 0 ? (
+                        <p className="text-center text-muted-foreground py-4">
+                          No hay ventas en este período
+                        </p>
+                      ) : (
+                        getFilteredSales().map((sale) => (
+                          <div key={sale.id} className="border rounded p-3 space-y-2">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="font-medium">
+                                  {sale.customerName || "Cliente anónimo"}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {new Date(sale.createdAt).toLocaleString("es-CO")}
+                                </p>
+                              </div>
+                              <span className="font-bold text-green-600">
+                                ${sale.total.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {sale.items.length} productos
+                              {sale.notes && (
+                                <span className="ml-2">• {sale.notes}</span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setCurrentSaleReceipt(sale);
+                                setShowSaleReceipt(true);
+                              }}
+                            >
+                              Ver Comprobante
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
           </Tabs>
         </div>
 
@@ -4221,6 +4703,99 @@ export default function StockSyncApp() {
                     Agregar
                   </Button>
                 </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Sale Receipt Modal */}
+        <Dialog open={showSaleReceipt} onOpenChange={setShowSaleReceipt}>
+          <DialogContent className="max-w-md mx-auto">
+            <DialogHeader>
+              <DialogTitle>Comprobante de Venta</DialogTitle>
+            </DialogHeader>
+            {currentSaleReceipt && (
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="text-center border-b pb-4">
+                  <h3 className="font-bold">{loggedInUser?.storeName || "Mi Tienda"}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(currentSaleReceipt.createdAt).toLocaleString("es-CO")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    ID: {currentSaleReceipt.id.slice(-8)}
+                  </p>
+                </div>
+
+                {/* Customer */}
+                {currentSaleReceipt.customerName && (
+                  <div>
+                    <p className="text-sm">
+                      <strong>Cliente:</strong> {currentSaleReceipt.customerName}
+                    </p>
+                  </div>
+                )}
+
+                {/* Items */}
+                <div className="space-y-2">
+                  <h4 className="font-medium">Productos:</h4>
+                  {currentSaleReceipt.items.map((item, index) => (
+                    <div key={index} className="flex justify-between text-sm">
+                      <div className="flex-1">
+                        <p className="font-medium">{item.productName}</p>
+                        <p className="text-muted-foreground">
+                          ${item.unitPrice} x {item.quantity}
+                          {item.discount > 0 && (
+                            <span className="text-green-600 ml-1">
+                              (-{item.discount}%)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <span>${item.subtotal.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Totals */}
+                <div className="border-t pt-2 space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Subtotal:</span>
+                    <span>${currentSaleReceipt.subtotal.toFixed(2)}</span>
+                  </div>
+                  {currentSaleReceipt.totalDiscount > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span>Descuentos:</span>
+                      <span>-${currentSaleReceipt.totalDiscount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-lg border-t pt-1">
+                    <span>Total:</span>
+                    <span>${currentSaleReceipt.total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {currentSaleReceipt.notes && (
+                  <div className="border-t pt-2">
+                    <p className="text-sm">
+                      <strong>Notas:</strong> {currentSaleReceipt.notes}
+                    </p>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="text-center text-xs text-muted-foreground border-t pt-2">
+                  <p>¡Gracias por su compra!</p>
+                  <p>StockSync - Sistema de Inventario</p>
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={() => setShowSaleReceipt(false)}
+                >
+                  Cerrar
+                </Button>
               </div>
             )}
           </DialogContent>
