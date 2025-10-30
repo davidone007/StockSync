@@ -3443,36 +3443,70 @@ export default function StockSyncApp() {
                         <Button
                           className="flex-1"
                           onClick={() => {
-                            const qty =
-                              Number.parseInt(existingProductQty) || 1;
-
-                            // Actualizar solo el stock del producto existente
-                            setProducts((prev) => {
-                              const next = prev.map((p) =>
-                                p.id === existingProductData.id
-                                  ? {
-                                      ...p,
-                                      stock: p.stock + qty,
-                                    }
-                                  : p
+                            const qty = Number.parseInt(existingProductQty) || 1;
+                            if (qty < 0) {
+                              // Registrar venta automática a 'anonimo'
+                              const sale = {
+                                id: crypto.randomUUID(),
+                                tenderoId: loggedInUser?.id || 'anonimo',
+                                items: [{
+                                  productId: existingProductData.id,
+                                  productName: existingProductData.name,
+                                  quantity: Math.abs(qty),
+                                  unitPrice: existingProductData.price,
+                                  discount: existingProductData.discount || 0,
+                                  subtotal: Math.abs(qty) * existingProductData.price * (1 - (existingProductData.discount || 0) / 100)
+                                }],
+                                subtotal: Math.abs(qty) * existingProductData.price,
+                                totalDiscount: 0,
+                                total: Math.abs(qty) * existingProductData.price,
+                                createdAt: new Date().toISOString(),
+                                customerName: 'anonimo',
+                                notes: 'Venta automática por escaneo negativo',
+                              };
+                              setSales((prev) => [...prev, sale]);
+                              // Descontar stock
+                              setProducts((prev) => {
+                                const next = prev.map((p) =>
+                                  p.id === existingProductData.id
+                                    ? {
+                                        ...p,
+                                        stock: p.stock + qty, // qty es negativo
+                                      }
+                                    : p
+                                );
+                                const saved = updateState((s) => ({
+                                  ...s,
+                                  products: next,
+                                  sales: [...(s.sales || []), sale],
+                                }));
+                                setAppState(saved);
+                                return next;
+                              });
+                              toast.success(`Venta registrada: ${existingProductData.name} x ${Math.abs(qty)} a anonimo`);
+                            } else {
+                              // Flujo normal: agregar stock
+                              setProducts((prev) => {
+                                const next = prev.map((p) =>
+                                  p.id === existingProductData.id
+                                    ? {
+                                        ...p,
+                                        stock: p.stock + qty,
+                                      }
+                                    : p
+                                );
+                                const saved = updateState((s) => ({
+                                  ...s,
+                                  products: next,
+                                }));
+                                setAppState(saved);
+                                return next;
+                              });
+                              toast.success(
+                                `${existingProductData.name}: +${qty} unidad${qty > 1 ? "es" : ""}`
                               );
-                              const saved = updateState((s) => ({
-                                ...s,
-                                products: next,
-                              }));
-                              setAppState(saved);
-                              return next;
-                            });
-
-                            toast.success(
-                              `${existingProductData.name}: +${qty} unidad${
-                                qty > 1 ? "es" : ""
-                              }`
-                            );
-
-                            console.log(
-                              "🔓 Limpiando handledBarcodeRef al confirmar existingProductModal"
-                            );
+                            }
+                            // Limpiar modal y refs
                             setExistingProductModal(false);
                             setExistingProductData(null);
                             setExistingProductQty("1");
