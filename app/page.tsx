@@ -10,6 +10,7 @@ import {
   type UserRecord,
   loadBarcodeDataset,
 } from "@/lib/utils";
+import { playBeep } from "@/lib/beep";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -131,6 +132,7 @@ export default function StockSyncApp() {
     description: "",
     discount: 0,
     category: "",
+    image: "",
   });
 
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -371,6 +373,9 @@ export default function StockSyncApp() {
           // NO marcar como manejado aquí, se hace en handleBarcodeDetected
           console.log("✅ Código detectado:", text);
 
+          // Reproducir sonido de beep
+          playBeep();
+
           // Detener inmediatamente el scanner para evitar más eventos
           scannerActive = false;
 
@@ -432,6 +437,9 @@ export default function StockSyncApp() {
 
               // NO marcar como manejado aquí, se hace en handleBarcodeDetected
               console.log("✅ Código detectado (fallback):", text);
+
+              // Reproducir sonido de beep
+              playBeep();
 
               // Detener inmediatamente
               scannerActive = false;
@@ -973,7 +981,7 @@ export default function StockSyncApp() {
       ...newSupplierProduct,
       id: newId,
       barcode: `SUP-${Date.now()}`,
-      image: "/diverse-products-still-life.png",
+      image: newSupplierProduct.image || "/placeholder.svg",
       stock: 0,
       minStock: 0,
       ownerUserId: appState?.currentUserId,
@@ -995,6 +1003,7 @@ export default function StockSyncApp() {
       description: "",
       discount: 0,
       category: "",
+      image: "",
     });
 
     setAddingSupplierProduct(false);
