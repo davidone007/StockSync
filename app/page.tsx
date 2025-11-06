@@ -8,6 +8,9 @@ import {
   updateState,
   type AppState,
   type UserRecord,
+  type Sale,
+  type SaleItem,
+  type Purchase,
   loadBarcodeDataset,
 } from "@/lib/utils";
 import { playBeep } from "@/lib/beep";
@@ -126,6 +129,7 @@ export default function StockSyncApp() {
   const [addingSupplierProduct, setAddingSupplierProduct] = useState(false);
   const [newSupplierProduct, setNewSupplierProduct] = useState({
     name: "",
+    barcode: "",
     price: 0,
     stock: 0,
     minStock: 0,
@@ -142,6 +146,7 @@ export default function StockSyncApp() {
     minStock: 0,
     discount: 0,
     category: "",
+    image: "",
   });
 
   const [products, setProducts] = useState<any[]>([]);
@@ -173,10 +178,12 @@ export default function StockSyncApp() {
     name: "",
     barcode: "",
     category: "",
-    stock: "",
-    minStock: "",
-    price: "",
+    stock: 0,
+    minStock: 0,
+    price: 0,
     image: "",
+    description: "",
+    discount: 0,
   });
   const [productImage, setProductImage] = useState<File | null>(null);
 
@@ -194,6 +201,22 @@ export default function StockSyncApp() {
   );
   const [chatMessage, setChatMessage] = useState("");
   const [conversations, setConversations] = useState<any[]>([]);
+
+  // States for adding products from offers
+  const [selectedOfferProduct, setSelectedOfferProduct] = useState<any>(null);
+  const [offerProductQuantity, setOfferProductQuantity] = useState(1);
+  const [addingFromOfferModal, setAddingFromOfferModal] = useState(false);
+
+  // States for billing system
+  const [salesCart, setSalesCart] = useState<SaleItem[]>([]);
+  const [customerName, setCustomerName] = useState("");
+  const [saleNotes, setSaleNotes] = useState("");
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [historyFilter, setHistoryFilter] = useState("all"); // all, today, week, month
+  const [showSaleReceipt, setShowSaleReceipt] = useState(false);
+  const [currentSaleReceipt, setCurrentSaleReceipt] = useState<Sale | null>(null);
+  const [stockUpdateTrigger, setStockUpdateTrigger] = useState(0);
 
   const generateUniqueCode = () => {
     const timestamp = Date.now().toString(36).toUpperCase();
@@ -251,13 +274,12 @@ export default function StockSyncApp() {
           ? { ...product, stock: Math.max(0, product.stock + change) }
           : product
       );
-      const saved = updateState((s) => ({ ...s, products: next }));
-      setAppState(saved);
-      return next;
-    });
-  };
-
-  const startScanning = async () => {
+    const saved = updateState((s) => ({ ...s, products: next }));
+    setAppState(saved);
+    setStockUpdateTrigger(prev => prev + 1); // Trigger update
+    return next;
+  });
+};  const startScanning = async () => {
     try {
       console.log("🎬 Iniciando scanner...");
 
@@ -408,8 +430,7 @@ export default function StockSyncApp() {
       try {
         codeReader.decodeFromVideoElement(
           videoRef.current!,
-          scannerListener,
-          errorListener
+          scannerListener
         );
       } catch (e) {
         console.error("Error en decodificación:", e);
@@ -560,7 +581,7 @@ export default function StockSyncApp() {
     }
   }, []);
 
-  // Cargar datos cuando el usuario cambia
+  // Cargar datos cuando el usuario cambia o el stock se actualiza
   useEffect(() => {
     if (!loggedInUser) return;
 
@@ -570,6 +591,8 @@ export default function StockSyncApp() {
     setProducts(st.products);
     setSupplierProducts(st.supplierProducts);
     setConversations(st.chats || []);
+    setSales(st.sales || []);
+    setPurchases(st.purchases || []);
 
     // Si hay usuario logueado, cargar su información
     if (loggedInUser.role === "proveedor") {
@@ -581,6 +604,34 @@ export default function StockSyncApp() {
         address: loggedInUser.address || "",
         description: loggedInUser.description || "",
       });
+
+      // Load supplier's own offers from global state
+      const supplierOffers = st.supplierOffers?.filter(
+        (offer) => offer.supplierId === loggedInUser.id && offer.isActive
+      ) || [];
+      
+      // Convert to local announcement format for UI compatibility
+      const localAnnouncements = supplierOffers.map((offer) => ({
+        id: offer.id,
+        products: offer.products,
+        createdAt: offer.createdAt,
+      }));
+      
+      setSupplierAnnouncements(localAnnouncements);
+    } else if (loggedInUser.role === "tendero") {
+      // Load all active offers for tenderos to see
+      const allActiveOffers = st.supplierOffers?.filter(offer => offer.isActive) || [];
+      setSupplierAnnouncements(allActiveOffers.map((offer) => ({
+        id: offer.id,
+        products: offer.products,
+        createdAt: offer.createdAt,
+        supplier: {
+          name: offer.supplierName,
+          businessName: offer.supplierBusinessName,
+          phone: offer.supplierPhone,
+          email: offer.supplierEmail,
+        },
+      })));
     }
 
     // Cargar dataset: merge de localStorage + /data/barcodes.json
@@ -596,7 +647,7 @@ export default function StockSyncApp() {
         setBarcodeDb(map);
       })
       .catch(() => setBarcodeDb(localDb as BarcodeDb));
-  }, [loggedInUser?.id]); // Solo cuando cambia el usuario
+  }, [loggedInUser?.id, stockUpdateTrigger]); // Solo cuando cambia el usuario o se fuerza la actualización
 
   // Limpiar stream cuando se desmonta
   useEffect(() => {
@@ -744,10 +795,12 @@ export default function StockSyncApp() {
       name: "",
       barcode: barcode,
       category: "",
-      stock: "1",
-      minStock: "5",
-      price: "",
+      stock: 1,
+      minStock: 5,
+      price: 0,
       image: "",
+      description: "",
+      discount: 0,
     });
     setProductImage(null);
     setCapturedPhoto(null);
@@ -915,6 +968,7 @@ export default function StockSyncApp() {
       minStock: product.minStock,
       discount: product.discount || 0,
       category: product.category || "",
+      image: product.image || "",
     });
   };
 
@@ -947,10 +1001,12 @@ export default function StockSyncApp() {
       name: "",
       barcode: "",
       category: "",
-      price: "",
-      stock: "",
-      minStock: "",
+      price: 0,
+      stock: 0,
+      minStock: 0,
       image: "",
+      description: "",
+      discount: 0,
     });
     setAddingProduct(false);
   };
@@ -980,10 +1036,10 @@ export default function StockSyncApp() {
     const productToAdd = {
       ...newSupplierProduct,
       id: newId,
-      barcode: `SUP-${Date.now()}`,
-      image: newSupplierProduct.image || "/placeholder.svg",
-      stock: 0,
-      minStock: 0,
+      barcode: newSupplierProduct.barcode || `SUP-${Date.now()}`,
+      image: newSupplierProduct.image || newSupplierProduct.image || "/placeholder.svg",
+      stock: newSupplierProduct.stock || 0,
+      minStock: newSupplierProduct.minStock || 0,
       ownerUserId: appState?.currentUserId,
       catalogType: "proveedor" as const,
     };
@@ -997,12 +1053,14 @@ export default function StockSyncApp() {
 
     setNewSupplierProduct({
       name: "",
+      barcode: "",
       price: 0,
       stock: 0,
       minStock: 0,
       description: "",
       discount: 0,
       category: "",
+      image: "",
       image: "",
     });
 
@@ -1073,11 +1131,8 @@ export default function StockSyncApp() {
       return;
     }
 
-    const stock = Number.parseInt(newProduct.stock);
-    const minStock = Number.parseInt(newProduct.minStock);
-
-    if (isNaN(stock) || isNaN(minStock) || stock < 0 || minStock < 0) {
-      toast.error("Las cantidades deben ser números válidos y no negativos");
+    if (newProduct.stock < 0 || newProduct.minStock < 0) {
+      toast.error("Las cantidades no pueden ser negativas");
       return;
     }
 
@@ -1086,10 +1141,14 @@ export default function StockSyncApp() {
       name: newProduct.name,
       barcode: newProduct.barcode,
       category: newProduct.category,
-      stock: stock,
-      minStock: minStock,
-      price: newProduct.price ? Number.parseFloat(newProduct.price) : 0,
+      stock: newProduct.stock,
+      minStock: newProduct.minStock,
+      price: newProduct.price || 0,
       image: newProduct.image || "/placeholder.svg",
+      description: newProduct.description || "",
+      discount: newProduct.discount || 0,
+      ownerUserId: loggedInUser?.id,
+      catalogType: "tendero" as const,
     };
 
     setProducts((prev) => {
@@ -1103,10 +1162,12 @@ export default function StockSyncApp() {
       name: "",
       barcode: "",
       category: "",
-      stock: "",
-      minStock: "",
-      price: "",
+      stock: 0,
+      minStock: 0,
+      price: 0,
       image: "",
+      description: "",
+      discount: 0,
     });
     setProductImage(null);
     setAddingProduct(false);
@@ -1119,35 +1180,67 @@ export default function StockSyncApp() {
       return;
     }
 
+    if (!loggedInUser || loggedInUser.role !== "proveedor") {
+      toast.error("Solo los proveedores pueden crear ofertas");
+      return;
+    }
+
     const productsToPublish = supplierProducts.filter((p) =>
       selectedProductsForAnnouncement.includes(p.id)
     );
 
+    // Create a global supplier offer
+    const newOffer = {
+      id: crypto.randomUUID(),
+      supplierId: loggedInUser.id,
+      supplierName: loggedInUser.name,
+      supplierBusinessName: loggedInUser.businessName,
+      supplierPhone: loggedInUser.phone,
+      supplierEmail: loggedInUser.email,
+      products: productsToPublish,
+      createdAt: new Date().toISOString(),
+      isActive: true,
+    };
+
+    // Save to global state
+    const updatedState = updateState((s) => ({
+      ...s,
+      supplierOffers: [...s.supplierOffers, newOffer],
+    }));
+    setAppState(updatedState);
+
+    // Also keep local announcement for UI compatibility
     const newAnnouncement = {
-      id: Date.now(),
+      id: newOffer.id, // Use the same ID as the global offer
       products: productsToPublish,
       createdAt: new Date().toISOString(),
     };
 
-    setSupplierAnnouncements((prev) => {
-      const next = [...prev, newAnnouncement];
-      const saved = updateState((s) => ({ ...s, announcements: next }));
-      setAppState(saved);
-      return next;
-    });
+    setSupplierAnnouncements((prev) => [...prev, newAnnouncement]);
     setSelectedProductsForAnnouncement([]);
     setAddingAnnouncement(false);
-    toast.success("Anuncio publicado correctamente");
+    toast.success("Oferta publicada correctamente y visible para todos los tenderos");
   };
 
-  const deleteAnnouncement = (announcementId: number) => {
-    setSupplierAnnouncements((prev) => {
-      const next = prev.filter((a) => a.id !== announcementId);
-      const saved = updateState((s) => ({ ...s, announcements: next }));
-      setAppState(saved);
-      return next;
-    });
-    toast.success("Anuncio eliminado correctamente");
+  const deleteAnnouncement = (announcementId: string | number) => {
+    if (!loggedInUser || loggedInUser.role !== "proveedor") {
+      toast.error("Solo los proveedores pueden eliminar sus ofertas");
+      return;
+    }
+
+    // Remove from global offers
+    const updatedState = updateState((s) => ({
+      ...s,
+      supplierOffers: s.supplierOffers.filter(
+        (offer) => offer.id !== announcementId.toString() || offer.supplierId !== loggedInUser.id
+      ),
+    }));
+    setAppState(updatedState);
+
+    // Remove from local announcements
+    setSupplierAnnouncements((prev) => prev.filter((a) => a.id !== announcementId));
+    
+    toast.success("Oferta eliminada correctamente");
   };
 
   const getPublishedProducts = () => {
@@ -1186,6 +1279,7 @@ export default function StockSyncApp() {
       minStock: product.minStock,
       discount: product.discount || 0,
       category: product.category || "",
+      image: product.image || "",
     });
   };
 
@@ -1279,6 +1373,331 @@ export default function StockSyncApp() {
       });
     });
     return count;
+  };
+
+  // Function to add products from supplier offers to shopkeeper inventory
+  const addProductFromOffer = (offerProduct: any, quantity: number = 1) => {
+    if (!loggedInUser || loggedInUser.role !== "tendero") {
+      toast.error("Solo los tenderos pueden agregar productos a su inventario");
+      return;
+    }
+
+    if (quantity <= 0) {
+      toast.error("La cantidad debe ser mayor a 0");
+      return;
+    }
+
+    // Find the offer this product belongs to
+    const relatedOffer = appState?.supplierOffers.find(offer => 
+      offer.products.some(p => p.id === offerProduct.id)
+    );
+
+    // Check if product already exists in shopkeeper's inventory (by barcode)
+    const existingProductIndex = products.findIndex(
+      (p) => p.barcode === offerProduct.barcode
+    );
+
+    if (existingProductIndex !== -1) {
+      // Product exists, increase quantity
+      const updatedProducts = [...products];
+      updatedProducts[existingProductIndex] = {
+        ...updatedProducts[existingProductIndex],
+        stock: updatedProducts[existingProductIndex].stock + quantity,
+      };
+
+      setProducts(updatedProducts);
+      const saved = updateState((s) => ({ ...s, products: updatedProducts }));
+      setAppState(saved);
+
+      // Force re-render
+      setStockUpdateTrigger(prev => prev + 1);
+
+      toast.success(
+        `✅ Se agregaron ${quantity} unidades de ${offerProduct.name} al inventario existente`
+      );
+    } else {
+      // Product doesn't exist, create new
+      const newProduct = {
+        id: Date.now(),
+        name: offerProduct.name,
+        barcode: offerProduct.barcode,
+        category: offerProduct.category || "Sin categoría",
+        stock: quantity,
+        minStock: offerProduct.minStock || 5,
+        price: offerProduct.price,
+        image: offerProduct.image || "/placeholder.svg",
+        description: offerProduct.description || "",
+        discount: offerProduct.discount || 0,
+        ownerUserId: loggedInUser.id,
+        catalogType: "tendero" as const,
+      };
+
+      const updatedProducts = [...products, newProduct];
+      setProducts(updatedProducts);
+      const saved = updateState((s) => ({ ...s, products: updatedProducts }));
+      setAppState(saved);
+
+      // Force re-render
+      setStockUpdateTrigger(prev => prev + 1);
+
+      toast.success(
+        `✅ ${offerProduct.name} agregado al inventario con ${quantity} unidades`
+      );
+    }
+
+    // Register the purchase if we found the related offer
+    if (relatedOffer) {
+      const purchaseItem: SaleItem = {
+        productId: offerProduct.id,
+        productName: offerProduct.name,
+        quantity,
+        unitPrice: offerProduct.price,
+        discount: offerProduct.discount || 0,
+        subtotal: quantity * offerProduct.price * (1 - (offerProduct.discount || 0) / 100)
+      };
+
+      registerPurchaseFromOffer(
+        relatedOffer.id,
+        relatedOffer.supplierName,
+        relatedOffer.supplierId,
+        [purchaseItem],
+        purchaseItem.subtotal
+      );
+    }
+  };
+
+  // Function to handle selecting a product from an offer
+  const handleSelectOfferProduct = (product: any) => {
+    setSelectedOfferProduct(product);
+    setOfferProductQuantity(1);
+    setAddingFromOfferModal(true);
+  };
+
+  // Function to confirm adding a product from an offer
+  const confirmAddFromOffer = () => {
+    if (selectedOfferProduct && offerProductQuantity > 0) {
+      addProductFromOffer(selectedOfferProduct, offerProductQuantity);
+      setAddingFromOfferModal(false);
+      setSelectedOfferProduct(null);
+      setOfferProductQuantity(1);
+    }
+  };
+
+  // Billing System Functions
+  const addToSalesCart = (product: any, quantity: number = 1) => {
+    if (quantity <= 0) {
+      toast.error("La cantidad debe ser mayor a 0");
+      return;
+    }
+
+    if (quantity > product.stock) {
+      toast.error(`Solo hay ${product.stock} unidades disponibles`);
+      return;
+    }
+
+    const existingItem = salesCart.find(item => item.productId === product.id);
+    
+    if (existingItem) {
+      const newQuantity = existingItem.quantity + quantity;
+      if (newQuantity > product.stock) {
+        toast.error(`Solo hay ${product.stock} unidades disponibles`);
+        return;
+      }
+      
+      setSalesCart(prev => prev.map(item => 
+        item.productId === product.id 
+          ? {
+              ...item,
+              quantity: newQuantity,
+              subtotal: newQuantity * item.unitPrice * (1 - item.discount / 100)
+            }
+          : item
+      ));
+    } else {
+      const discount = product.discount || 0;
+      const unitPrice = product.price;
+      const subtotal = quantity * unitPrice * (1 - discount / 100);
+      
+      const newItem: SaleItem = {
+        productId: product.id,
+        productName: product.name,
+        quantity,
+        unitPrice,
+        discount,
+        subtotal
+      };
+      
+      setSalesCart(prev => [...prev, newItem]);
+    }
+    
+    toast.success(`${product.name} agregado al carrito`);
+  };
+
+  const removeFromSalesCart = (productId: number) => {
+    setSalesCart(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  const updateCartItemQuantity = (productId: number, newQuantity: number) => {
+    console.log(`Updating cart item ${productId} to quantity ${newQuantity}`);
+    
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    if (newQuantity <= 0) {
+      removeFromSalesCart(productId);
+      return;
+    }
+
+    if (newQuantity > product.stock) {
+      toast.error(`Solo hay ${product.stock} unidades disponibles`);
+      return;
+    }
+
+    setSalesCart(prev => {
+      const updated = prev.map(item => 
+        item.productId === productId 
+          ? {
+              ...item,
+              quantity: newQuantity,
+              subtotal: newQuantity * item.unitPrice * (1 - item.discount / 100)
+            }
+          : item
+      );
+      console.log('Updated cart:', updated);
+      return updated;
+    });
+  };
+
+  const calculateSaleTotal = () => {
+    const subtotal = salesCart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+    const totalDiscount = salesCart.reduce((sum, item) => sum + (item.quantity * item.unitPrice * item.discount / 100), 0);
+    const total = subtotal - totalDiscount;
+    
+    return { subtotal, totalDiscount, total };
+  };
+
+  const completeSale = () => {
+    if (salesCart.length === 0) {
+      toast.error("El carrito está vacío");
+      return;
+    }
+
+    if (!loggedInUser || loggedInUser.role !== "tendero") {
+      toast.error("Solo los tenderos pueden realizar ventas");
+      return;
+    }
+
+    // Validate stock availability
+    for (const item of salesCart) {
+      const product = products.find(p => p.id === item.productId);
+      if (!product || product.stock < item.quantity) {
+        toast.error(`Stock insuficiente para ${item.productName}`);
+        return;
+      }
+    }
+
+    const { subtotal, totalDiscount, total } = calculateSaleTotal();
+
+    const newSale: Sale = {
+      id: crypto.randomUUID(),
+      tenderoId: loggedInUser.id,
+      items: [...salesCart],
+      subtotal,
+      totalDiscount,
+      total,
+      createdAt: new Date().toISOString(),
+      customerName: customerName || undefined,
+      notes: saleNotes || undefined,
+    };
+
+    // Update product stock
+    const updatedProducts = products.map(product => {
+      const cartItem = salesCart.find(item => item.productId === product.id);
+      if (cartItem) {
+        return {
+          ...product,
+          stock: product.stock - cartItem.quantity
+        };
+      }
+      return product;
+    });
+
+    // Update state
+    const updatedSales = [...sales, newSale];
+    setSales(updatedSales);
+    setProducts(updatedProducts);
+
+    const savedState = updateState((s) => ({
+      ...s,
+      products: updatedProducts,
+      sales: updatedSales,
+    }));
+    setAppState(savedState);
+
+    // Force component re-render by updating products state again
+    setStockUpdateTrigger(prev => prev + 1);
+
+    // Show receipt
+    setCurrentSaleReceipt(newSale);
+    setShowSaleReceipt(true);
+
+    // Clear cart
+    setSalesCart([]);
+    setCustomerName("");
+    setSaleNotes("");
+
+    toast.success(`✅ Venta completada por $${total.toFixed(2)}`);
+  };
+
+  const registerPurchaseFromOffer = (offerId: string, supplierName: string, supplierId: string, items: SaleItem[], total: number) => {
+    if (!loggedInUser || loggedInUser.role !== "tendero") {
+      toast.error("Solo los tenderos pueden registrar compras");
+      return;
+    }
+
+    const newPurchase: Purchase = {
+      id: crypto.randomUUID(),
+      tenderoId: loggedInUser.id,
+      supplierId,
+      supplierName,
+      offerId,
+      items,
+      total,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedPurchases = [...purchases, newPurchase];
+    setPurchases(updatedPurchases);
+
+    const savedState = updateState((s) => ({
+      ...s,
+      purchases: updatedPurchases,
+    }));
+    setAppState(savedState);
+
+    toast.success(`✅ Compra registrada por $${total.toFixed(2)}`);
+  };
+
+  const getFilteredSales = () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    return sales.filter(sale => {
+      const saleDate = new Date(sale.createdAt);
+      
+      switch (historyFilter) {
+        case "today":
+          return saleDate >= today;
+        case "week":
+          return saleDate >= weekAgo;
+        case "month":
+          return saleDate >= monthAgo;
+        default:
+          return true;
+      }
+    });
   };
 
   const markMessagesAsRead = (conversationId: string) => {
@@ -2007,6 +2426,20 @@ export default function StockSyncApp() {
                   />
                 </div>
                 <div>
+                  <Label htmlFor="newProductBarcode">Código de Barras</Label>
+                  <Input
+                    id="newProductBarcode"
+                    placeholder="Ej: 123456789012"
+                    value={newSupplierProduct.barcode}
+                    onChange={(e) =>
+                      setNewSupplierProduct((prev) => ({
+                        ...prev,
+                        barcode: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
                   <Label htmlFor="newProductPrice">Precio *</Label>
                   <Input
                     id="newProductPrice"
@@ -2056,6 +2489,38 @@ export default function StockSyncApp() {
                       setNewSupplierProduct((prev) => ({
                         ...prev,
                         description: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newProductStock">Stock Disponible</Label>
+                  <Input
+                    id="newProductStock"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={newSupplierProduct.stock || ""}
+                    onChange={(e) =>
+                      setNewSupplierProduct((prev) => ({
+                        ...prev,
+                        stock: Number.parseInt(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="newProductMinStock">Stock Mínimo</Label>
+                  <Input
+                    id="newProductMinStock"
+                    type="number"
+                    min="0"
+                    placeholder="5"
+                    value={newSupplierProduct.minStock || ""}
+                    onChange={(e) =>
+                      setNewSupplierProduct((prev) => ({
+                        ...prev,
+                        minStock: Number.parseInt(e.target.value) || 0,
                       }))
                     }
                   />
@@ -2661,6 +3126,13 @@ export default function StockSyncApp() {
                 <Megaphone className="h-4 w-4" />
                 Ofertas
               </TabsTrigger>
+              <TabsTrigger
+                value="billing"
+                className="flex items-center gap-2"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Facturación
+              </TabsTrigger>
             </TabsList>
 
             {/* Scanning Tab */}
@@ -2979,36 +3451,70 @@ export default function StockSyncApp() {
                         <Button
                           className="flex-1"
                           onClick={() => {
-                            const qty =
-                              Number.parseInt(existingProductQty) || 1;
-
-                            // Actualizar solo el stock del producto existente
-                            setProducts((prev) => {
-                              const next = prev.map((p) =>
-                                p.id === existingProductData.id
-                                  ? {
-                                      ...p,
-                                      stock: p.stock + qty,
-                                    }
-                                  : p
+                            const qty = Number.parseInt(existingProductQty) || 1;
+                            if (qty < 0) {
+                              // Registrar venta automática a 'anonimo'
+                              const sale = {
+                                id: crypto.randomUUID(),
+                                tenderoId: loggedInUser?.id || 'anonimo',
+                                items: [{
+                                  productId: existingProductData.id,
+                                  productName: existingProductData.name,
+                                  quantity: Math.abs(qty),
+                                  unitPrice: existingProductData.price,
+                                  discount: existingProductData.discount || 0,
+                                  subtotal: Math.abs(qty) * existingProductData.price * (1 - (existingProductData.discount || 0) / 100)
+                                }],
+                                subtotal: Math.abs(qty) * existingProductData.price,
+                                totalDiscount: 0,
+                                total: Math.abs(qty) * existingProductData.price,
+                                createdAt: new Date().toISOString(),
+                                customerName: 'anonimo',
+                                notes: 'Venta automática por escaneo negativo',
+                              };
+                              setSales((prev) => [...prev, sale]);
+                              // Descontar stock
+                              setProducts((prev) => {
+                                const next = prev.map((p) =>
+                                  p.id === existingProductData.id
+                                    ? {
+                                        ...p,
+                                        stock: p.stock + qty, // qty es negativo
+                                      }
+                                    : p
+                                );
+                                const saved = updateState((s) => ({
+                                  ...s,
+                                  products: next,
+                                  sales: [...(s.sales || []), sale],
+                                }));
+                                setAppState(saved);
+                                return next;
+                              });
+                              toast.success(`Venta registrada: ${existingProductData.name} x ${Math.abs(qty)} a anonimo`);
+                            } else {
+                              // Flujo normal: agregar stock
+                              setProducts((prev) => {
+                                const next = prev.map((p) =>
+                                  p.id === existingProductData.id
+                                    ? {
+                                        ...p,
+                                        stock: p.stock + qty,
+                                      }
+                                    : p
+                                );
+                                const saved = updateState((s) => ({
+                                  ...s,
+                                  products: next,
+                                }));
+                                setAppState(saved);
+                                return next;
+                              });
+                              toast.success(
+                                `${existingProductData.name}: +${qty} unidad${qty > 1 ? "es" : ""}`
                               );
-                              const saved = updateState((s) => ({
-                                ...s,
-                                products: next,
-                              }));
-                              setAppState(saved);
-                              return next;
-                            });
-
-                            toast.success(
-                              `${existingProductData.name}: +${qty} unidad${
-                                qty > 1 ? "es" : ""
-                              }`
-                            );
-
-                            console.log(
-                              "🔓 Limpiando handledBarcodeRef al confirmar existingProductModal"
-                            );
+                            }
+                            // Limpiar modal y refs
                             setExistingProductModal(false);
                             setExistingProductData(null);
                             setExistingProductQty("1");
@@ -3117,7 +3623,7 @@ export default function StockSyncApp() {
                             <p className="text-xs text-muted-foreground mb-1">
                               {product.barcode}
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2" key={`stock-${product.id}-${product.stock}`}>
                               <div
                                 className={`w-2 h-2 rounded-full ${status.color}`}
                               ></div>
@@ -3463,12 +3969,27 @@ export default function StockSyncApp() {
                     <Card key={announcement.id} className="overflow-hidden">
                       <CardHeader className="bg-muted/50">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-base">
-                            Oferta - {announcement.products.length}{" "}
-                            {announcement.products.length === 1
-                              ? "producto"
-                              : "productos"}
-                          </CardTitle>
+                          <div>
+                            <CardTitle className="text-base">
+                              Oferta - {announcement.products.length}{" "}
+                              {announcement.products.length === 1
+                                ? "producto"
+                                : "productos"}
+                            </CardTitle>
+                            {announcement.supplier && (
+                              <div className="flex items-center gap-2 mt-1">
+                                <Store className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm font-medium text-muted-foreground">
+                                  {announcement.supplier.businessName || announcement.supplier.name}
+                                </span>
+                                {announcement.supplier.phone && (
+                                  <span className="text-xs text-muted-foreground">
+                                    • {announcement.supplier.phone}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           <Badge variant="secondary">
                             {new Date(
                               announcement.createdAt
@@ -3477,7 +3998,7 @@ export default function StockSyncApp() {
                         </div>
                       </CardHeader>
                       <CardContent className="p-4">
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-3 mb-4">
                           {announcement.products.map((product: any) => (
                             <div
                               key={product.id}
@@ -3500,7 +4021,7 @@ export default function StockSyncApp() {
                                 </Badge>
                               )}
                               {product.discount > 0 ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 mb-2">
                                   <span className="text-xs text-muted-foreground line-through">
                                     ${product.price}
                                   </span>
@@ -3519,18 +4040,260 @@ export default function StockSyncApp() {
                                   </Badge>
                                 </div>
                               ) : (
-                                <p className="text-sm font-bold text-primary">
+                                <p className="text-sm font-bold text-primary mb-2">
                                   ${product.price}
                                 </p>
                               )}
+                              <Button
+                                size="sm"
+                                className="w-full text-xs"
+                                onClick={() => handleSelectOfferProduct(product)}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Agregar a inventario
+                              </Button>
                             </div>
                           ))}
                         </div>
+                        {announcement.supplier && (
+                          <div className="flex items-center justify-between pt-3 border-t">
+                            <div className="text-xs text-muted-foreground">
+                              <p>Contacto: {announcement.supplier.email}</p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                // Find supplier in users and start chat
+                                const supplier = appState?.users.find(u => u.email === announcement.supplier.email);
+                                if (supplier) {
+                                  setSelectedChatUser(supplier);
+                                  setChatOpen(true);
+                                }
+                              }}
+                            >
+                              <MessageCircle className="h-4 w-4 mr-2" />
+                              Contactar
+                            </Button>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}
                 </div>
               )}
+            </TabsContent>
+
+            {/* Billing Tab */}
+            <TabsContent value="billing" className="p-4 space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Sales Cart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Nueva Venta
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Customer Info */}
+                    <div className="space-y-2">
+                      <Label htmlFor="customerName">Cliente (opcional)</Label>
+                      <Input
+                        id="customerName"
+                        placeholder="Nombre del cliente"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Product Selection */}
+                    <div className="space-y-2">
+                      <Label>Seleccionar Productos</Label>
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {products.filter(p => p.stock > 0).map((product) => (
+                          <div key={product.id} className="flex items-center justify-between p-2 border rounded">
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{product.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Stock: {product.stock} | ${product.price}
+                                {product.discount && product.discount > 0 && (
+                                  <span className="text-green-600 ml-1">
+                                    ({product.discount}% desc.)
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => addToSalesCart(product, 1)}
+                              disabled={product.stock === 0}
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Shopping Cart */}
+                    {salesCart.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Carrito de Venta</Label>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {salesCart.map((item) => (
+                            <div key={`${item.productId}-${item.quantity}`} className="flex items-center justify-between p-2 bg-muted rounded">
+                              <div className="flex-1">
+                                <p className="font-medium text-sm">{item.productName}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  ${item.unitPrice} x {item.quantity} = ${item.subtotal.toFixed(2)}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateCartItemQuantity(item.productId, item.quantity - 1)}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const newQty = parseInt(e.target.value) || 1;
+                                    updateCartItemQuantity(item.productId, newQty);
+                                  }}
+                                  className="w-16 h-8 text-center text-sm mx-1"
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => updateCartItemQuantity(item.productId, item.quantity + 1)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => removeFromSalesCart(item.productId)}
+                                >
+                                  ×
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Sale Total */}
+                        <div className="border-t pt-2 space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span>Subtotal:</span>
+                            <span>${calculateSaleTotal().subtotal.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span>Descuentos:</span>
+                            <span>-${calculateSaleTotal().totalDiscount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold">
+                            <span>Total:</span>
+                            <span>${calculateSaleTotal().total.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {/* Notes */}
+                        <div className="space-y-2">
+                          <Label htmlFor="saleNotes">Notas (opcional)</Label>
+                          <Textarea
+                            id="saleNotes"
+                            placeholder="Notas sobre la venta..."
+                            value={saleNotes}
+                            onChange={(e) => setSaleNotes(e.target.value)}
+                          />
+                        </div>
+
+                        {/* Complete Sale Button */}
+                        <Button
+                          className="w-full"
+                          onClick={completeSale}
+                          disabled={salesCart.length === 0}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Completar Venta
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Sales History */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Historial de Ventas
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Filter */}
+                    <Select value={historyFilter} onValueChange={setHistoryFilter}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las ventas</SelectItem>
+                        <SelectItem value="today">Hoy</SelectItem>
+                        <SelectItem value="week">Esta semana</SelectItem>
+                        <SelectItem value="month">Este mes</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {/* Sales List */}
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {getFilteredSales().length === 0 ? (
+                        <p className="text-center text-muted-foreground py-4">
+                          No hay ventas en este período
+                        </p>
+                      ) : (
+                        getFilteredSales().map((sale) => (
+                          <div key={sale.id} className="border rounded p-3 space-y-2">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="font-medium">
+                                  {sale.customerName || "Cliente anónimo"}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {new Date(sale.createdAt).toLocaleString("es-CO")}
+                                </p>
+                              </div>
+                              <span className="font-bold text-green-600">
+                                ${sale.total.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {sale.items.length} productos
+                              {sale.notes && (
+                                <span className="ml-2">• {sale.notes}</span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setCurrentSaleReceipt(sale);
+                                setShowSaleReceipt(true);
+                              }}
+                            >
+                              Ver Comprobante
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
           </Tabs>
         </div>
@@ -3630,7 +4393,7 @@ export default function StockSyncApp() {
                     min="0"
                     value={newProduct.stock}
                     onChange={(e) =>
-                      setNewProduct({ ...newProduct, stock: e.target.value })
+                      setNewProduct({ ...newProduct, stock: Number.parseInt(e.target.value) || 0 })
                     }
                     placeholder="0"
                   />
@@ -3643,7 +4406,7 @@ export default function StockSyncApp() {
                     min="0"
                     value={newProduct.minStock}
                     onChange={(e) =>
-                      setNewProduct({ ...newProduct, minStock: e.target.value })
+                      setNewProduct({ ...newProduct, minStock: Number.parseInt(e.target.value) || 0 })
                     }
                     placeholder="5"
                   />
@@ -3658,7 +4421,7 @@ export default function StockSyncApp() {
                   min="0"
                   value={newProduct.price}
                   onChange={(e) =>
-                    setNewProduct({ ...newProduct, price: e.target.value })
+                    setNewProduct({ ...newProduct, price: Number.parseFloat(e.target.value) || 0 })
                   }
                   placeholder="0.00"
                 />
@@ -3731,10 +4494,12 @@ export default function StockSyncApp() {
                       name: "",
                       barcode: "",
                       category: "",
-                      stock: "",
-                      minStock: "",
-                      price: "",
+                      stock: 0,
+                      minStock: 0,
+                      price: 0,
                       image: "",
+                      description: "",
+                      discount: 0,
                     });
                     setProductImage(null);
                   }}
@@ -3926,6 +4691,152 @@ export default function StockSyncApp() {
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Eliminar Producto
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal for adding product from offer */}
+        <Dialog open={addingFromOfferModal} onOpenChange={setAddingFromOfferModal}>
+          <DialogContent className="max-w-sm mx-auto">
+            <DialogHeader>
+              <DialogTitle>Agregar producto al inventario</DialogTitle>
+            </DialogHeader>
+            {selectedOfferProduct && (
+              <div className="space-y-4">
+                <div className="text-center">
+                  <img
+                    src={selectedOfferProduct.image || "/placeholder.svg"}
+                    alt={selectedOfferProduct.name}
+                    className="w-24 h-24 rounded object-cover mx-auto mb-2"
+                  />
+                  <h3 className="font-medium">{selectedOfferProduct.name}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    ${selectedOfferProduct.price}
+                  </p>
+                </div>
+                
+                <div>
+                  <Label htmlFor="quantity">Cantidad a agregar</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={offerProductQuantity}
+                    onChange={(e) => setOfferProductQuantity(Number(e.target.value))}
+                    className="mt-1"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setAddingFromOfferModal(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={confirmAddFromOffer}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Sale Receipt Modal */}
+        <Dialog open={showSaleReceipt} onOpenChange={setShowSaleReceipt}>
+          <DialogContent className="max-w-md mx-auto">
+            <DialogHeader>
+              <DialogTitle>Comprobante de Venta</DialogTitle>
+            </DialogHeader>
+            {currentSaleReceipt && (
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="text-center border-b pb-4">
+                  <h3 className="font-bold">{loggedInUser?.storeName || "Mi Tienda"}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(currentSaleReceipt.createdAt).toLocaleString("es-CO")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    ID: {currentSaleReceipt.id.slice(-8)}
+                  </p>
+                </div>
+
+                {/* Customer */}
+                {currentSaleReceipt.customerName && (
+                  <div>
+                    <p className="text-sm">
+                      <strong>Cliente:</strong> {currentSaleReceipt.customerName}
+                    </p>
+                  </div>
+                )}
+
+                {/* Items */}
+                <div className="space-y-2">
+                  <h4 className="font-medium">Productos:</h4>
+                  {currentSaleReceipt.items.map((item, index) => (
+                    <div key={index} className="flex justify-between text-sm">
+                      <div className="flex-1">
+                        <p className="font-medium">{item.productName}</p>
+                        <p className="text-muted-foreground">
+                          ${item.unitPrice} x {item.quantity}
+                          {item.discount > 0 && (
+                            <span className="text-green-600 ml-1">
+                              (-{item.discount}%)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <span>${item.subtotal.toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Totals */}
+                <div className="border-t pt-2 space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span>Subtotal:</span>
+                    <span>${currentSaleReceipt.subtotal.toFixed(2)}</span>
+                  </div>
+                  {currentSaleReceipt.totalDiscount > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span>Descuentos:</span>
+                      <span>-${currentSaleReceipt.totalDiscount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-lg border-t pt-1">
+                    <span>Total:</span>
+                    <span>${currentSaleReceipt.total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {currentSaleReceipt.notes && (
+                  <div className="border-t pt-2">
+                    <p className="text-sm">
+                      <strong>Notas:</strong> {currentSaleReceipt.notes}
+                    </p>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="text-center text-xs text-muted-foreground border-t pt-2">
+                  <p>¡Gracias por su compra!</p>
+                  <p>StockSync - Sistema de Inventario</p>
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={() => setShowSaleReceipt(false)}
+                >
+                  Cerrar
                 </Button>
               </div>
             )}

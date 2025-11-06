@@ -79,6 +79,52 @@ export interface AnnouncementRecord {
   createdAt: string;
 }
 
+export interface SupplierOffer {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  supplierBusinessName?: string;
+  supplierPhone?: string;
+  supplierEmail: string;
+  products: ProductRecord[];
+  createdAt: string;
+  expiresAt?: string;
+  isActive: boolean;
+}
+
+export interface SaleItem {
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  subtotal: number;
+}
+
+export interface Sale {
+  id: string;
+  tenderoId: string;
+  items: SaleItem[];
+  subtotal: number;
+  totalDiscount: number;
+  total: number;
+  createdAt: string;
+  customerName?: string;
+  notes?: string;
+}
+
+export interface Purchase {
+  id: string;
+  tenderoId: string;
+  supplierId: string;
+  supplierName: string;
+  offerId: string;
+  items: SaleItem[];
+  total: number;
+  createdAt: string;
+  notes?: string;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -102,6 +148,9 @@ export interface AppState {
   products: ProductRecord[];
   supplierProducts: ProductRecord[];
   announcements: AnnouncementRecord[];
+  supplierOffers: SupplierOffer[];
+  sales: Sale[];
+  purchases: Purchase[];
   chats: ChatConversation[];
 }
 
@@ -112,6 +161,9 @@ export function initializeStateIfNeeded(): AppState {
     products: [],
     supplierProducts: [],
     announcements: [],
+    supplierOffers: [],
+    sales: [],
+    purchases: [],
     chats: [],
   });
 
@@ -150,15 +202,31 @@ export function initializeStateIfNeeded(): AppState {
       ...existing,
       users: [admin, tendero, proveedor],
       currentUserId: null,
+      supplierOffers: [],
+      sales: [],
+      purchases: [],
       chats: [],
     };
     saveToStorage("state", state);
     return state;
   }
 
-  // Asegurar que chats existe (para estados antiguos)
+  // Asegurar que chats, supplierOffers, sales y purchases existen (para estados antiguos)
   if (!existing.chats) {
     existing.chats = [];
+  }
+  if (!existing.supplierOffers) {
+    existing.supplierOffers = [];
+  }
+  if (!existing.sales) {
+    existing.sales = [];
+  }
+  if (!existing.purchases) {
+    existing.purchases = [];
+  }
+  
+  if (existing.chats !== existing.chats || existing.supplierOffers !== existing.supplierOffers || 
+      existing.sales !== existing.sales || existing.purchases !== existing.purchases) {
     saveToStorage("state", existing);
   }
 
