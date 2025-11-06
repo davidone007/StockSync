@@ -1061,7 +1061,6 @@ export default function StockSyncApp() {
       discount: 0,
       category: "",
       image: "",
-      image: "",
     });
 
     setAddingSupplierProduct(false);
