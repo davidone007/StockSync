@@ -1,7 +1,10 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-    darkMode: ["class"],
+	// Tailwind's TypeScript types accept either a string ('class'|'media')
+	// or a tuple like ["class", string]. Using the string avoids the
+	// incorrect tuple length TypeScript error in this project's setup.
+	darkMode: 'class',
     content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
