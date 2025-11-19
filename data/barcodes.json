@@ -1,0 +1,260 @@
+[
+  {
+    "barcode": "7702090020847",
+    "name": "POSTOBON BRETAÑA X 100NZ",
+    "price": 2650.0
+  },
+  {
+    "barcode": "7702090029505",
+    "name": "POSTOBON COLOMBIANA 1.5 L",
+    "price": 3750.0
+  },
+  {
+    "barcode": "7707151700515",
+    "name": "POSTOBON COLOMBIANA 1.5L",
+    "price": 3750.0
+  },
+  {
+    "barcode": "7707151700874",
+    "name": "POSTOBON COLOMBIANA 400ML",
+    "price": 2150.0
+  },
+  {
+    "barcode": "7707151700119",
+    "name": "POSTOBON COLOMBIANA 500 ML",
+    "price": 2150.0
+  },
+  {
+    "barcode": "7702090001563",
+    "name": "POSTOBON MANZANA 1.5 L",
+    "price": 3750.0
+  },
+  {
+    "barcode": "7702090029512",
+    "name": "POSTOBON MANZANA 1.5 L",
+    "price": 3750.0
+  },
+  {
+    "barcode": "7702090016406",
+    "name": "POSTOBON MANZANA 2.5 LT",
+    "price": 4600.0
+  },
+  {
+    "barcode": "7702090065527",
+    "name": "POSTOBON NARANJA 1.5L",
+    "price": 3750.0
+  },
+  {
+    "barcode": "7702090049084",
+    "name": "POSTOBON NARANJA 2 LT",
+    "price": 3350.0
+  },
+  {
+    "barcode": "7702090031935",
+    "name": "POSTOBON NARANJA 400ML",
+    "price": 2500.0
+  },
+  {
+    "barcode": "7702090029550",
+    "name": "POSTOBON UVA 1.5 LT",
+    "price": 3750.0
+  },
+  { "barcode": "7702090049077", "name": "POSTOBON UVA 2 LT", "price": 3350.0 },
+  { "barcode": "7702090031942", "name": "POSTOBON UVA 400ML", "price": 2100.0 },
+  { "barcode": "7702090000153", "name": "POSTOBON UVA 500ML", "price": 2100.0 },
+  { "barcode": "7702535024423", "name": "COCA COLA 1.5 L", "price": 5000.0 },
+  { "barcode": "7702535025482", "name": "COCA COLA 1.5L", "price": 5400.0 },
+  { "barcode": "7702535001783", "name": "COCA COLA 2.25 L", "price": 6550.0 },
+  { "barcode": "7702535024430", "name": "COCA COLA 2.5 LT", "price": 8000.0 },
+  { "barcode": "7702535024447", "name": "COCA COLA 3 L", "price": 9150.0 },
+  { "barcode": "7702535033593", "name": "COCA COLA 500 ML", "price": 2500.0 },
+  {
+    "barcode": "7702535025284",
+    "name": "COCA COLA EN LATA 269ML",
+    "price": 2500.0
+  },
+  {
+    "barcode": "7702535025260",
+    "name": "COCA COLA EN LATA CAFE 269ML",
+    "price": 2800.0
+  },
+  {
+    "barcode": "7702535021712",
+    "name": "COCA COLA EN LATA X 235 ML",
+    "price": 2500.0
+  },
+  {
+    "barcode": "7702535023761",
+    "name": "COCA COLA LATA CAFE 235ML",
+    "price": 2600.0
+  },
+  {
+    "barcode": "7702535028032",
+    "name": "COCA COLA SIN AZUCAR 1.365L",
+    "price": 2100.0
+  },
+  {
+    "barcode": "7702535011119",
+    "name": "COCA COLA SIN AZUCAR 400 ML",
+    "price": 2000.0
+  },
+  { "barcode": "7702535001028", "name": "COCA COLA X 350 ML", "price": 1900.0 },
+  {
+    "barcode": "7702535011799",
+    "name": "COCA COLA ZERO 1.5L",
+    "price": 5400.0
+  },
+  { "barcode": "7702535011089", "name": "COCACOLA 400ML", "price": 2350.0 },
+  {
+    "barcode": "77082381",
+    "name": "COCACOLA SIN AZUCAR 250ML",
+    "price": 1550.0
+  },
+  {
+    "barcode": "7702535032688",
+    "name": "COCACOLA SIN AZUCAR 500ML",
+    "price": 2500.0
+  },
+  { "barcode": "7702090031973", "name": "GASEOSA 7UP 400ML", "price": 2100.0 },
+  {
+    "barcode": "7708507552666",
+    "name": "GASEOSA BIG COLA 1.75L",
+    "price": 3900.0
+  },
+  {
+    "barcode": "7708507552406",
+    "name": "GASEOSA BIG PIÑA 1.75L",
+    "price": 2700.0
+  },
+  {
+    "barcode": "7702090029581",
+    "name": "GASEOSA CANADA DRY 1.5L",
+    "price": 3500.0
+  },
+  {
+    "barcode": "7702090022766",
+    "name": "GASEOSA COLOMBIANA X 3.125 L",
+    "price": 8000.0
+  },
+  {
+    "barcode": "7707151700768",
+    "name": "GASEOSA COLOMBIANA X 3.125 LT",
+    "price": 8000.0
+  },
+  {
+    "barcode": "7702090064193",
+    "name": "GASEOSA COLOMBIANA 2.5L",
+    "price": 5000.0
+  },
+  {
+    "barcode": "7702090032017",
+    "name": "GASEOSA COLOMBIANA 400ML",
+    "price": 2100.0
+  },
+  {
+    "barcode": "7702090022728",
+    "name": "GASEOSA MANZA POSTOBON X 3.125 L",
+    "price": 8000.0
+  },
+  {
+    "barcode": "7705518010475",
+    "name": "GASEOSA MAXI CHEVERE 1000ML",
+    "price": 1900.0
+  },
+  {
+    "barcode": "7705518010482",
+    "name": "GASEOSA MAXI CHEVERE 1700ML",
+    "price": 2950.0
+  },
+  {
+    "barcode": "7705518009905",
+    "name": "GASEOSA MAXI COLA 1700ML",
+    "price": 2950.0
+  },
+  {
+    "barcode": "7705518011045",
+    "name": "GASEOSA MAXI GUARANA 400ML",
+    "price": 1100.0
+  },
+  {
+    "barcode": "7705518010451",
+    "name": "GASEOSA MAXI GUARANA 400ML",
+    "price": 1100.0
+  },
+  {
+    "barcode": "7705518010604",
+    "name": "GASEOSA MAXI LIMON 1700ML",
+    "price": 2950.0
+  },
+  {
+    "barcode": "7705518010390",
+    "name": "GASEOSA MAXI MANZANA 400ML",
+    "price": 1100.0
+  },
+  {
+    "barcode": "7705518010291",
+    "name": "GASEOSA MAXI NARANJA 1700ML",
+    "price": 2950.0
+  },
+  {
+    "barcode": "7705518010406",
+    "name": "GASEOSA MAXI UVA 400ML",
+    "price": 850.0
+  },
+  {
+    "barcode": "7702090031966",
+    "name": "GASEOSA PEPSI 400ML",
+    "price": 2100.0
+  },
+  {
+    "barcode": "7702192043546",
+    "name": "GASEOSA PEPSI X 3.125L",
+    "price": 6650.0
+  },
+  { "barcode": "7702057803292", "name": "GASTROFAST 10 ML", "price": 2550.0 },
+  {
+    "barcode": "7804300120214",
+    "name": "GATO NEGRO CM 750 ML",
+    "price": 33600.0
+  },
+  {
+    "barcode": "7798081661939",
+    "name": "GATO NEGRO M 750 ML",
+    "price": 33300.0
+  },
+  {
+    "barcode": "7804300157722",
+    "name": "GATO NEGRO TD 750 ML",
+    "price": 32000.0
+  },
+  {
+    "barcode": "7702192422051",
+    "name": "GATORADE F T X 500 ML",
+    "price": 3100.0
+  },
+  {
+    "barcode": "7702192218050",
+    "name": "GATORADE MAND X 500 ML",
+    "price": 3250.0
+  },
+  {
+    "barcode": "7702192224051",
+    "name": "GATORADE MARACUYA X 500 ML",
+    "price": 3850.0
+  },
+  {
+    "barcode": "7862109437599",
+    "name": "GATORADE TROPICAL *500ML",
+    "price": 2900.0
+  },
+  {
+    "barcode": "7702192736455",
+    "name": "GATOREDE BLUE ICE 500ML",
+    "price": 3100.0
+  },
+  {
+    "barcode": "7707151701031",
+    "name": "COLOMBIANA 250ML",
+    "price": 1500
+  }
+]
